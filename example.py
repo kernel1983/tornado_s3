@@ -42,11 +42,15 @@ if __name__ == "__main__":
     tornado.ioloop.IOLoop.instance().start()
 """
 
-s = S3Bucket("cocotown",
+s = S3Bucket("mybucket",
              access_key=settings["AmazonAccessKeyID"],
-             secret_key=settings["AmazonSecretAccessKey"])
-print [(key, modify, etag, size) for (key, modify, etag, size) in s.listdir()]
+             secret_key=settings["AmazonSecretAccessKey"],
+             base_url="http://s3-ap-southeast-1.amazonaws.com/mybucket")
 
-s.put("myfile", "my content")
-s.get("myfile")
-#tornado.ioloop.IOLoop.instance().start()
+print [key for (key, modify, etag, size) in s.listdir()]
+
+s.put("my file", "my content")
+
+f = s.get("my file")
+print f.body
+print f.s3_info
