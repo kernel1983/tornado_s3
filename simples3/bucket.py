@@ -23,7 +23,7 @@ import tornado.httpclient as httpclient
 
 #amazon_s3_domain = "s3.amazonaws.com"
 amazon_s3_domain = "s3-ap-southeast-1.amazonaws.com"
-amazon_s3_ns_url = "http://%s/doc/2006-03-01/" % amazon_s3_domain
+amazon_s3_ns_url = "http://%s/doc/2006-03-01/" % "s3.amazonaws.com"
 
 class S3Error(Exception):
     fp = None
@@ -256,9 +256,9 @@ class S3Bucket(object):
         for retry_no in xrange(self.n_retries):
             req = s3req.urllib(self)
             try:
-                http_client = httpclient.AsyncHTTPClient()
-                http_client.fetch(req, None)
-                return
+                http_client = httpclient.HTTPClient()
+                response = http_client.fetch(req)
+                return response
 
                 """
                 if self.timeout:
@@ -281,12 +281,12 @@ class S3Bucket(object):
 
     def get(self, key):
         response = self.send(self.request(key=key))
-        response.s3_info = info_dict(dict(response.info()))
+        response.s3_info = info_dict(dict(response.headers))
         return response
 
     def info(self, key):
         response = self.send(self.request(method="HEAD", key=key))
-        rv = info_dict(dict(response.info()))
+        rv = info_dict(dict(response.headers))
         response.close()
         return rv
 
@@ -307,7 +307,6 @@ class S3Bucket(object):
         if "Content-MD5" not in headers:
             headers["Content-MD5"] = aws_md5(data)
         s3req = self.request(method="PUT", key=key, data=data, headers=headers)
-        #self.send(s3req).close()
         self.send(s3req)
 
     def delete(self, *keys):
@@ -360,7 +359,7 @@ class S3Bucket(object):
         self.send(self.request(method="PUT", key=key, headers=headers))
 
     def _get_listing(self, args):
-        return S3Listing.parse(self.send(self.request(args=args)))
+        return S3Listing.parse(self.send(self.request(args=args)).buffer)
 
     def listdir(self, prefix=None, marker=None, limit=None, delimiter=None):
         """List bucket contents.

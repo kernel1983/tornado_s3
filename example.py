@@ -45,7 +45,8 @@ if __name__ == "__main__":
 s = S3Bucket("cocotown",
              access_key=settings["AmazonAccessKeyID"],
              secret_key=settings["AmazonSecretAccessKey"])
-print s
+print [(key, modify, etag, size) for (key, modify, etag, size) in s.listdir()]
 
-s.put("myfile2", "my content")
-tornado.ioloop.IOLoop.instance().start()
+s.put("myfile", "my content")
+s.get("myfile")
+#tornado.ioloop.IOLoop.instance().start()
