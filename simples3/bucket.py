@@ -18,6 +18,9 @@ from cgi import escape
 from .utils import (_amz_canonicalize, metadata_headers, rfc822_fmtdate, _iso8601_dt,
                     aws_md5, aws_urlquote, guess_mimetype, info_dict, expire2datetime)
 
+import tornado.httpclient as httpclient
+
+
 #amazon_s3_domain = "s3.amazonaws.com"
 amazon_s3_domain = "s3-ap-southeast-1.amazonaws.com"
 amazon_s3_ns_url = "http://%s/doc/2006-03-01/" % amazon_s3_domain
@@ -66,22 +69,9 @@ class KeyNotFound(S3Error, KeyError):
     @property
     def key(self): return self.extra.get("key")
 
-class StreamHTTPHandler(urllib2.HTTPHandler):
-    pass
-
-class StreamHTTPSHandler(urllib2.HTTPSHandler):
-    pass
-
-class AnyMethodRequest(urllib2.Request):
-    def __init__(self, method, *args, **kwds):
-        self.method = method
-        urllib2.Request.__init__(self, *args, **kwds)
-
-    def get_method(self):
-        return self.method
-
 class S3Request(object):
-    urllib_request_cls = AnyMethodRequest
+    #urllib_request_cls = AnyMethodRequest
+    urllib_request_cls = httpclient.HTTPRequest
 
     def __init__(self, bucket=None, key=None, method="GET", headers={},
                  args=None, data=None, subresource=None):
@@ -133,8 +123,8 @@ class S3Request(object):
         return sign
 
     def urllib(self, bucket):
-        return self.urllib_request_cls(self.method, self.url(bucket.base_url),
-                                       data=self.data, headers=self.headers)
+        return self.urllib_request_cls(self.url(bucket.base_url), method=self.method,
+                                       body=self.data, headers=self.headers)
 
     def url(self, base_url, arg_sep="&"):
         url = base_url + "/"
@@ -216,7 +206,7 @@ class S3Bucket(object):
             if not base_url.startswith(scheme + "://"):
                 raise ValueError("secure=%r, url must use %s"
                                  % (secure, scheme))
-        self.opener = self.build_opener()
+        #self.opener = self.build_opener()
         self.name = name
         self.access_key = access_key
         self.secret_key = secret_key
@@ -266,10 +256,16 @@ class S3Bucket(object):
         for retry_no in xrange(self.n_retries):
             req = s3req.urllib(self)
             try:
+                http_client = httpclient.AsyncHTTPClient()
+                http_client.fetch(req, None)
+                return
+
+                """
                 if self.timeout:
                     return self.opener.open(req, timeout=self.timeout)
                 else:
                     return self.opener.open(req)
+                """
             except (urllib2.HTTPError, urllib2.URLError), e:
                 # If S3 gives HTTP 500, we should try again.
                 ecode = getattr(e, "code", None)
@@ -282,11 +278,6 @@ class S3Bucket(object):
                 raise exc_cls.from_urllib(e, key=s3req.key)
         else:
             raise RuntimeError("ran out of retries")  # Shouldn't happen.
-
-    def make_request(self, *a, **k):
-        warnings.warn(DeprecationWarning("make_request() is deprecated, "
-                                         "use request() and send()"))
-        return self.send(self.request(*a, **k))
 
     def get(self, key):
         response = self.send(self.request(key=key))
@@ -316,7 +307,8 @@ class S3Bucket(object):
         if "Content-MD5" not in headers:
             headers["Content-MD5"] = aws_md5(data)
         s3req = self.request(method="PUT", key=key, data=data, headers=headers)
-        self.send(s3req).close()
+        #self.send(s3req).close()
+        self.send(s3req)
 
     def delete(self, *keys):
         n_keys = len(keys)
@@ -365,7 +357,7 @@ class S3Bucket(object):
             headers.update(metadata_headers(metadata))
         else:
             headers["X-AMZ-Metadata-Directive"] = "COPY"
-        self.send(self.request(method="PUT", key=key, headers=headers)).close()
+        self.send(self.request(method="PUT", key=key, headers=headers))
 
     def _get_listing(self, args):
         return S3Listing.parse(self.send(self.request(args=args)))

@@ -47,4 +47,5 @@ s = S3Bucket("cocotown",
              secret_key=settings["AmazonSecretAccessKey"])
 print s
 
-s.put("myfile", "my content")
+s.put("myfile2", "my content")
+tornado.ioloop.IOLoop.instance().start()
