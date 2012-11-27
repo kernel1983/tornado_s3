@@ -11,7 +11,7 @@ import tornado.ioloop
 import tornado.web
 import tornado.httpclient as httpclient
 
-from simples3 import S3Bucket
+from tornado_s3 import S3Bucket
 
 
 class TestHandler(tornado.web.RequestHandler):
@@ -47,10 +47,19 @@ s = S3Bucket("mybucket",
              secret_key=settings["AmazonSecretAccessKey"],
              base_url="http://s3-ap-southeast-1.amazonaws.com/mybucket")
 
+#delete all files in bucket
+for i in [key for (key, modify, etag, size) in s.listdir()]:
+    del s[i]
+
+#list all files
 print [key for (key, modify, etag, size) in s.listdir()]
 
+#create file
 s.put("my file", "my content")
 
+#download file
 f = s.get("my file")
 print f.body
+
+#get file information
 print f.s3_info
