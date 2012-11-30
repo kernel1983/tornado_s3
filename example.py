@@ -52,16 +52,19 @@ for i in [key for (key, modify, etag, size) in s.listdir()]:
     del s[i]
 
 #list all files
-class test:
-    def callback(self, l):
-        print l
-        print self
-    def __init__(self):
-        s.listdir(limit=10, callback=self.callback)
-test()
+#print [key for (key, modify, etag, size) in s.listdir()]
+
+def list_callback(l):
+    for (key, modify, etag, size) in l:
+        print key
+
+def put_callback():
+    print 'upload success'
+    print
+    s.listdir(limit=10, callback=list_callback)
 
 #create file
-s.put("my file", "my content")
+s.put("my file", "my content", callback=put_callback)
 
 #download file
 f = s.get("my file")

@@ -261,10 +261,14 @@ class S3Bucket(object):
         except (httpclient.HTTPError), e:
             pass
 
-    def get(self, key):
-        response = self.send(self.request(key=key))
+    def _get(self, response):
         response.s3_info = info_dict(dict(response.headers))
-        return response
+
+        if self.callback:
+            self.callback(response)
+
+    def get(self, key):
+        self.send(self.request(key=key), self._get)
 
     def info(self, key):
         response = self.send(self.request(method="HEAD", key=key))
@@ -272,8 +276,12 @@ class S3Bucket(object):
         response.close()
         return rv
 
+    def _put(self, response):
+        if self.callback:
+            self.callback()
+
     def put(self, key, data=None, acl=None, metadata={}, mimetype=None,
-            transformer=None, headers={}):
+            transformer=None, headers={}, callback=None):
         if isinstance(data, unicode):
             data = data.encode(self.default_encoding)
         headers = headers.copy()
@@ -288,8 +296,11 @@ class S3Bucket(object):
             headers["Content-Length"] = str(len(data))
         if "Content-MD5" not in headers:
             headers["Content-MD5"] = aws_md5(data)
+
+        self.callback = callback
+
         s3req = self.request(method="PUT", key=key, data=data, headers=headers)
-        self.send(s3req)
+        self.send(s3req, self._put)
 
     def delete(self, *keys):
         n_keys = len(keys)
