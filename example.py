@@ -52,7 +52,13 @@ for i in [key for (key, modify, etag, size) in s.listdir()]:
     del s[i]
 
 #list all files
-print [key for (key, modify, etag, size) in s.listdir()]
+class test:
+    def callback(self, l):
+        print l
+        print self
+    def __init__(self):
+        s.listdir(limit=10, callback=self.callback)
+test()
 
 #create file
 s.put("my file", "my content")
@@ -63,3 +69,6 @@ print f.body
 
 #get file information
 print f.s3_info
+
+if __name__ == "__main__":
+    tornado.ioloop.IOLoop.instance().start()

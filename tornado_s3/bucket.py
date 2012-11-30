@@ -19,6 +19,7 @@ from .utils import (_amz_canonicalize, metadata_headers, rfc822_fmtdate, _iso860
                     aws_md5, aws_urlquote, guess_mimetype, info_dict, expire2datetime)
 
 import tornado.httpclient as httpclient
+#from tornado import stack_context
 
 
 amazon_s3_domain = "s3.amazonaws.com"
@@ -242,41 +243,23 @@ class S3Bucket(object):
         finally:
             self.timeout = prev_timeout
 
-    @classmethod
-    def build_opener(cls):
-        return urllib2.build_opener(StreamHTTPHandler, StreamHTTPSHandler)
-
     def request(self, *a, **k):
         k.setdefault("bucket", self.name)
         return S3Request(*a, **k)
 
-    def send(self, s3req):
+    def send(self, s3req, callback=None):
         s3req.sign(self)
-        for retry_no in xrange(self.n_retries):
-            req = s3req.urllib(self)
-            try:
-                http_client = httpclient.HTTPClient()
-                response = http_client.fetch(req)
-                return response
+        req = s3req.urllib(self)
+        try:
+            #http_client = httpclient.HTTPClient()
+            #return http_client.fetch(req)
 
-                """
-                if self.timeout:
-                    return self.opener.open(req, timeout=self.timeout)
-                else:
-                    return self.opener.open(req)
-                """
-            except (urllib2.HTTPError, urllib2.URLError), e:
-                # If S3 gives HTTP 500, we should try again.
-                ecode = getattr(e, "code", None)
-                if ecode == 500:
-                    continue
-                elif ecode == 404:
-                    exc_cls = KeyNotFound
-                else:
-                    exc_cls = S3Error
-                raise exc_cls.from_urllib(e, key=s3req.key)
-        else:
-            raise RuntimeError("ran out of retries")  # Shouldn't happen.
+            http_client = httpclient.AsyncHTTPClient()
+            http_client.fetch(req, callback)
+            return
+
+        except (httpclient.HTTPError), e:
+            pass
 
     def get(self, key):
         response = self.send(self.request(key=key))
@@ -357,10 +340,19 @@ class S3Bucket(object):
             headers["X-AMZ-Metadata-Directive"] = "COPY"
         self.send(self.request(method="PUT", key=key, headers=headers))
 
-    def _get_listing(self, args):
-        return S3Listing.parse(self.send(self.request(args=args)).buffer)
+    def _listing(self, response):
+        listing = S3Listing.parse(response.buffer)
+        self.result.extend(listing)
+        #print [i for i in listing]
 
-    def listdir(self, prefix=None, marker=None, limit=None, delimiter=None):
+        if listing.truncated:
+            self.args["marker"] = listing.next_marker
+            self.send(self.request(args=self.args), self._listing)
+        else:
+            if self.callback:
+                self.callback(self.result)
+
+    def listdir(self, prefix=None, marker=None, limit=None, delimiter=None, callback=None):
         """List bucket contents.
 
         Yields tuples of (key, modified, etag, size).
@@ -378,18 +370,12 @@ class S3Bucket(object):
              ("marker", marker),
              ("max-keys", limit),
              ("delimiter", delimiter))
-        args = dict((str(k), str(v)) for (k, v) in m if v is not None)
+        self.args = dict((str(k), str(v)) for (k, v) in m if v is not None)
 
-        listing = self._get_listing(args)
-        while listing:
-            for item in listing:
-                yield item
+        self.result = []
+        self.callback = callback
 
-            if listing.truncated:
-                args["marker"] = listing.next_marker
-                listing = self._get_listing(args)
-            else:
-                break
+        self.send(self.request(args=self.args), self._listing)
 
     def make_url(self, key, args=None, arg_sep=";"):
         s3req = self.request(key=key, args=args)
