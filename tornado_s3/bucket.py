@@ -251,12 +251,8 @@ class S3Bucket(object):
         s3req.sign(self)
         req = s3req.urllib(self)
         try:
-            #http_client = httpclient.HTTPClient()
-            #return http_client.fetch(req)
-
             http_client = httpclient.AsyncHTTPClient()
             http_client.fetch(req, callback)
-            return
 
         except (httpclient.HTTPError), e:
             pass
@@ -341,28 +337,6 @@ class S3Bucket(object):
             self.send(self.request(method="POST", data=data,
                                    headers=headers, subresource="delete"), self._delete)
 
-    # TODO Expose the conditional headers, x-amz-copy-source-if-*
-    # TODO Add module-level documentation and doctests.
-    def copy(self, source, key, acl=None, metadata=None,
-             mimetype=None, headers={}):
-        """Copy S3 file *source* on format '<bucket>/<key>' to *key*.
-
-        If metadata is not None, replaces the metadata with given metadata,
-        otherwise copies the previous metadata.
-
-        Note that *acl* is not copied, but set to *private* by S3 if not given.
-        """
-        headers = headers.copy()
-        headers.update({"Content-Type": mimetype or guess_mimetype(key)})
-        headers["X-AMZ-Copy-Source"] = source
-        if acl: headers["X-AMZ-ACL"] = acl
-        if metadata is not None:
-            headers["X-AMZ-Metadata-Directive"] = "REPLACE"
-            headers.update(metadata_headers(metadata))
-        else:
-            headers["X-AMZ-Metadata-Directive"] = "COPY"
-        self.send(self.request(method="PUT", key=key, headers=headers))
-
     def _listing(self, response):
         listing = S3Listing.parse(response.buffer)
         self.result.extend(listing)
@@ -437,32 +411,3 @@ class S3Bucket(object):
         else:
             warnings.warn(dep_cls(msg % ("make_url", False)))
             return self.make_url(key)
-
-    def put_bucket(self, config_xml=None, acl=None):
-        if config_xml:
-            if isinstance(config_xml, unicode):
-                config_xml = config_xml.encode("utf-8")
-            headers = {"Content-Length": len(config_xml),
-                       "Content-Type": "text/xml"}
-        else:
-            headers = {"Content-Length": "0"}
-        if acl:
-            headers["X-AMZ-ACL"] = acl
-        resp = self.send(self.request(method="PUT", key=None,
-                                      data=config_xml, headers=headers))
-        resp.close()
-        return resp.code == 200
-
-    def delete_bucket(self):
-        return self.delete(None)
-
-class ReadOnlyS3Bucket(S3Bucket):
-    """Read-only S3 bucket.
-
-    Mostly useful for situations where urllib2 isn't available (e.g. Google App
-    Engine), but you still want the utility functions (like generating
-    authenticated URLs, and making upload HTML forms.)
-    """
-
-    def build_opener(self):
-        return None
