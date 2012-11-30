@@ -267,14 +267,20 @@ class S3Bucket(object):
         if self.callback:
             self.callback(response)
 
-    def get(self, key):
+    def get(self, key, callback=None):
+        self.callback = callback
+
         self.send(self.request(key=key), self._get)
 
-    def info(self, key):
-        response = self.send(self.request(method="HEAD", key=key))
+    def _info(self, response):
         rv = info_dict(dict(response.headers))
-        response.close()
-        return rv
+        if self.callback:
+            self.callback(rv)
+
+    def info(self, key, callback=None):
+        self.callback = callback
+
+        self.send(self.request(method="HEAD", key=key), self._info)
 
     def _put(self, response):
         if self.callback:
@@ -302,7 +308,17 @@ class S3Bucket(object):
         s3req = self.request(method="PUT", key=key, data=data, headers=headers)
         self.send(s3req, self._put)
 
-    def delete(self, *keys):
+    def _delete(self, response):
+        success = 200 <= response.code < 300
+
+        if self.callback:
+            self.callback(success)
+
+    def delete(self, keys, callback=None):
+        assert isinstance(keys, list)
+
+        self.callback = callback
+
         n_keys = len(keys)
         if not keys:
             raise TypeError("required one key at least")
@@ -311,12 +327,9 @@ class S3Bucket(object):
             # In <=py25, urllib2 raises an exception for HTTP 204, and later
             # does not, so treat errors and non-errors as equals.
             try:
-                resp = self.send(self.request(method="DELETE", key=keys[0]))
+                self.send(self.request(method="DELETE", key=keys[0]), self._delete)
             except KeyNotFound, e:
                 e.fp.close()
-                return False
-            else:
-                return 200 <= resp.code < 300
         else:
             if n_keys > 1000:
                 raise ValueError("cannot delete more than 1000 keys at a time")
@@ -325,9 +338,8 @@ class S3Bucket(object):
             data = ('<?xml version="1.0" encoding="UTF-8"?><Delete>'
                     "<Quiet>true</Quiet>%s</Delete>") % body
             headers = {"Content-Type": "multipart/form-data"}
-            resp = self.send(self.request(method="POST", data=data,
-                                          headers=headers, subresource="delete"))
-            return 200 <= resp.code < 300
+            self.send(self.request(method="POST", data=data,
+                                   headers=headers, subresource="delete"), self._delete)
 
     # TODO Expose the conditional headers, x-amz-copy-source-if-*
     # TODO Add module-level documentation and doctests.

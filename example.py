@@ -54,9 +54,21 @@ for i in [key for (key, modify, etag, size) in s.listdir()]:
 #list all files
 #print [key for (key, modify, etag, size) in s.listdir()]
 
+def delete_callback(success):
+    print success
+
+def info_callback(i):
+    print i
+    s.delete(["my file 3","my file 4"], callback=delete_callback)
+
+def get_callback(response):
+    print response.body
+    s.info("my file", callback=info_callback)
+
 def list_callback(l):
     for (key, modify, etag, size) in l:
         print key
+    s.get("my file", callback=get_callback)
 
 def put_callback():
     print 'upload success'
