@@ -47,12 +47,6 @@ s = S3Bucket("mybucket",
              secret_key=settings["AmazonSecretAccessKey"],
              base_url="http://s3-ap-southeast-1.amazonaws.com/mybucket")
 
-#delete all files in bucket
-for i in [key for (key, modify, etag, size) in s.listdir()]:
-    del s[i]
-
-#list all files
-#print [key for (key, modify, etag, size) in s.listdir()]
 
 def delete_callback(success):
     print success
@@ -78,12 +72,7 @@ def put_callback():
 #create file
 s.put("my file", "my content", callback=put_callback)
 
-#download file
-f = s.get("my file")
-print f.body
 
-#get file information
-print f.s3_info
 
 if __name__ == "__main__":
     tornado.ioloop.IOLoop.instance().start()

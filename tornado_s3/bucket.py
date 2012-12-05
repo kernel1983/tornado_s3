@@ -14,12 +14,12 @@ from contextlib import contextmanager
 from urllib import quote_plus
 from base64 import b64encode
 from cgi import escape
+from functools import partial
 
 from .utils import (_amz_canonicalize, metadata_headers, rfc822_fmtdate, _iso8601_dt,
                     aws_md5, aws_urlquote, guess_mimetype, info_dict, expire2datetime)
 
 import tornado.httpclient as httpclient
-#from tornado import stack_context
 
 
 amazon_s3_domain = "s3.amazonaws.com"
@@ -257,30 +257,22 @@ class S3Bucket(object):
         except (httpclient.HTTPError), e:
             pass
 
-    def _get(self, response):
+    def _get(self, response, callback):
         response.s3_info = info_dict(dict(response.headers))
-
-        if self.callback:
-            self.callback(response)
+        if callback: callback(response)
 
     def get(self, key, callback=None):
-        self.callback = callback
+        self.send(self.request(key=key), partial(self._get, callback=callback))
 
-        self.send(self.request(key=key), self._get)
-
-    def _info(self, response):
+    def _info(self, response, callback):
         rv = info_dict(dict(response.headers))
-        if self.callback:
-            self.callback(rv)
+        if callback: callback(rv)
 
     def info(self, key, callback=None):
-        self.callback = callback
+        self.send(self.request(method="HEAD", key=key), partial(self._info, callback=callback))
 
-        self.send(self.request(method="HEAD", key=key), self._info)
-
-    def _put(self, response):
-        if self.callback:
-            self.callback()
+    def _put(self, response, callback):
+        if callback: callback()
 
     def put(self, key, data=None, acl=None, metadata={}, mimetype=None,
             transformer=None, headers={}, callback=None):
@@ -299,21 +291,15 @@ class S3Bucket(object):
         if "Content-MD5" not in headers:
             headers["Content-MD5"] = aws_md5(data)
 
-        self.callback = callback
-
         s3req = self.request(method="PUT", key=key, data=data, headers=headers)
-        self.send(s3req, self._put)
+        self.send(s3req, partial(self._put, callback=callback))
 
-    def _delete(self, response):
+    def _delete(self, response, callback):
         success = 200 <= response.code < 300
-
-        if self.callback:
-            self.callback(success)
+        if callback: callback(success)
 
     def delete(self, keys, callback=None):
         assert isinstance(keys, list)
-
-        self.callback = callback
 
         n_keys = len(keys)
         if not keys:
@@ -323,7 +309,7 @@ class S3Bucket(object):
             # In <=py25, urllib2 raises an exception for HTTP 204, and later
             # does not, so treat errors and non-errors as equals.
             try:
-                self.send(self.request(method="DELETE", key=keys[0]), self._delete)
+                self.send(self.request(method="DELETE", key=keys[0]), partial(self._delete, callback=callback))
             except KeyNotFound, e:
                 e.fp.close()
         else:
@@ -335,19 +321,17 @@ class S3Bucket(object):
                     "<Quiet>true</Quiet>%s</Delete>") % body
             headers = {"Content-Type": "multipart/form-data"}
             self.send(self.request(method="POST", data=data,
-                                   headers=headers, subresource="delete"), self._delete)
+                                   headers=headers, subresource="delete"), partial(self._delete, callback=callback))
 
-    def _listing(self, response):
+    def _listing(self, response, result, args, callback):
         listing = S3Listing.parse(response.buffer)
-        self.result.extend(listing)
-        #print [i for i in listing]
+        result.extend(listing)
 
         if listing.truncated:
-            self.args["marker"] = listing.next_marker
-            self.send(self.request(args=self.args), self._listing)
+            args["marker"] = listing.next_marker
+            self.send(self.request(args=args), partial(self._listing, result=result, args=args, callback=callback))
         else:
-            if self.callback:
-                self.callback(self.result)
+            if callback: callback(result)
 
     def listdir(self, prefix=None, marker=None, limit=None, delimiter=None, callback=None):
         """List bucket contents.
@@ -367,12 +351,9 @@ class S3Bucket(object):
              ("marker", marker),
              ("max-keys", limit),
              ("delimiter", delimiter))
-        self.args = dict((str(k), str(v)) for (k, v) in m if v is not None)
+        args = dict((str(k), str(v)) for (k, v) in m if v is not None)
 
-        self.result = []
-        self.callback = callback
-
-        self.send(self.request(args=self.args), self._listing)
+        self.send(self.request(args=args), partial(self._listing, result=[], args=args, callback=callback))
 
     def make_url(self, key, args=None, arg_sep=";"):
         s3req = self.request(key=key, args=args)
